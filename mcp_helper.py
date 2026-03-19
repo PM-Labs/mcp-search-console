@@ -15,7 +15,11 @@ def get_credentials():
     gsc_base64_key = os.getenv('SEARCH_CONSOLE_KEY')
     if not gsc_base64_key:
         raise ValueError("SEARCH_CONSOLE_KEY environment variable is not set.")
-    decoded_bytes = base64.b64decode(gsc_base64_key)
+    # Strip whitespace/newlines and fix base64 padding (common with PowerShell encoding)
+    key_b64 = gsc_base64_key.strip()
+    padding_needed = (4 - len(key_b64) % 4) % 4
+    key_b64 += '=' * padding_needed
+    decoded_bytes = base64.b64decode(key_b64)
     key_info = json.loads(decoded_bytes.decode('utf-8'))
     return service_account.Credentials.from_service_account_info(key_info, scopes=SCOPES)
 
