@@ -3,6 +3,40 @@ from googleapiclient.discovery import build
 import os
 import json
 import base64
+import requests
+
+# =============================================================================
+# Instantly API
+# =============================================================================
+
+INSTANTLY_API_BASE = "https://api.instantly.ai/api/v1"
+
+
+def get_instantly_api_key():
+    key = os.getenv('INSTANTLY_API_KEY', '').strip()
+    if not key:
+        raise ValueError("INSTANTLY_API_KEY environment variable is not set.")
+    return key
+
+
+def instantly_get(path, params=None):
+    api_key = get_instantly_api_key()
+    p = {"api_key": api_key}
+    if params:
+        p.update(params)
+    resp = requests.get(f"{INSTANTLY_API_BASE}{path}", params=p, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def instantly_post(path, payload=None):
+    api_key = get_instantly_api_key()
+    body = payload or {}
+    body["api_key"] = api_key
+    resp = requests.post(f"{INSTANTLY_API_BASE}{path}", json=body, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
 
 # =============================================================================
 # Google Auth
@@ -39,6 +73,8 @@ def handle_request(method, params):
         return handle_tools_list()
     elif method == "tools/call":
         return handle_tool_call(params)
+    elif method in ("notifications/initialized", "notifications/cancelled"):
+        return {}
     else:
         raise ValueError(f"Method not found: {method}")
 
@@ -63,6 +99,151 @@ def handle_initialize():
 def handle_tools_list():
     return {
         "tools": [
+            # ------------------------------------------------------------------
+            # Instantly tools
+            # ------------------------------------------------------------------
+            {
+                "name": "instantly_list_campaigns",
+                "description": (
+                    "List all Instantly.ai email outreach campaigns for the account. "
+                    "Returns campaign IDs, names, and status."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "skip": {
+                            "type": "integer",
+                            "description": "Number of campaigns to skip (for pagination). Defaults to 0.",
+                            "default": 0
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of campaigns to return (1-100). Defaults to 100.",
+                            "default": 100,
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    "required": [],
+                    "additionalProperties": False
+                }
+            },
+            {
+                "name": "instantly_get_campaign_analytics",
+                "description": (
+                    "Get summary analytics for one or all Instantly campaigns: "
+                    "emails sent, opened, replied, bounced, unsubscribed, etc."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "campaign_id": {
+                            "type": "string",
+                            "description": "Campaign ID to get analytics for. Omit to get analytics for all campaigns."
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date filter in YYYY-MM-DD format."
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date filter in YYYY-MM-DD format."
+                        }
+                    },
+                    "required": [],
+                    "additionalProperties": False
+                }
+            },
+            {
+                "name": "instantly_get_leads",
+                "description": (
+                    "List leads (contacts) in a specific Instantly campaign. "
+                    "Returns email, name, status, and other lead data."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "campaign_id": {
+                            "type": "string",
+                            "description": "The campaign ID to retrieve leads from."
+                        },
+                        "skip": {
+                            "type": "integer",
+                            "description": "Number of leads to skip for pagination. Defaults to 0.",
+                            "default": 0
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum leads to return (1-100). Defaults to 100.",
+                            "default": 100,
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    "required": ["campaign_id"],
+                    "additionalProperties": False
+                }
+            },
+            {
+                "name": "instantly_add_leads",
+                "description": (
+                    "Add one or more leads (contacts) to an Instantly campaign. "
+                    "Each lead must include at least an email address."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "campaign_id": {
+                            "type": "string",
+                            "description": "The campaign ID to add leads to."
+                        },
+                        "leads": {
+                            "type": "array",
+                            "description": "Array of lead objects to add.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {"type": "string", "description": "Lead email address (required)."},
+                                    "first_name": {"type": "string"},
+                                    "last_name": {"type": "string"},
+                                    "company_name": {"type": "string"},
+                                    "personalization": {"type": "string", "description": "Custom personalisation line for this lead."},
+                                    "phone": {"type": "string"},
+                                    "website": {"type": "string"},
+                                    "custom1": {"type": "string"},
+                                    "custom2": {"type": "string"},
+                                    "custom3": {"type": "string"}
+                                },
+                                "required": ["email"]
+                            },
+                            "minItems": 1
+                        },
+                        "skip_if_in_workspace": {
+                            "type": "boolean",
+                            "description": "Skip adding a lead if it already exists in any campaign in the workspace. Defaults to false.",
+                            "default": False
+                        }
+                    },
+                    "required": ["campaign_id", "leads"],
+                    "additionalProperties": False
+                }
+            },
+            {
+                "name": "instantly_get_account_vitals",
+                "description": (
+                    "Retrieve high-level account information and sending statistics "
+                    "for the authenticated Instantly account."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False
+                }
+            },
+            # ------------------------------------------------------------------
+            # Google Search Console tools
+            # ------------------------------------------------------------------
             {
                 "name": "list_sites",
                 "description": (
@@ -197,7 +378,44 @@ def handle_tool_call(params):
                 "content": [{"type": "text", "text": "Invalid arguments: expected object or JSON string."}]
             }
 
-    if tool_name == "list_sites":
+    # Instantly tools
+    if tool_name == "instantly_list_campaigns":
+        try:
+            result = instantly_list_campaigns(arguments)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"isError": True, "content": [{"type": "text", "text": f"Tool error (instantly_list_campaigns): {str(e)}"}]}
+
+    elif tool_name == "instantly_get_campaign_analytics":
+        try:
+            result = instantly_get_campaign_analytics(arguments)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"isError": True, "content": [{"type": "text", "text": f"Tool error (instantly_get_campaign_analytics): {str(e)}"}]}
+
+    elif tool_name == "instantly_get_leads":
+        try:
+            result = instantly_get_leads(arguments)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"isError": True, "content": [{"type": "text", "text": f"Tool error (instantly_get_leads): {str(e)}"}]}
+
+    elif tool_name == "instantly_add_leads":
+        try:
+            result = instantly_add_leads(arguments)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"isError": True, "content": [{"type": "text", "text": f"Tool error (instantly_add_leads): {str(e)}"}]}
+
+    elif tool_name == "instantly_get_account_vitals":
+        try:
+            result = instantly_get_account_vitals()
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"isError": True, "content": [{"type": "text", "text": f"Tool error (instantly_get_account_vitals): {str(e)}"}]}
+
+    # Google Search Console tools
+    elif tool_name == "list_sites":
         try:
             result = list_sites()
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
@@ -285,3 +503,61 @@ def run_search_analytics_query(arguments):
         "row_count": len(results),
         "rows": results
     }
+
+
+# =============================================================================
+# Instantly Tool Implementations
+# =============================================================================
+
+def instantly_list_campaigns(arguments):
+    """List all Instantly campaigns."""
+    params = {
+        "skip": arguments.get("skip", 0),
+        "limit": arguments.get("limit", 100),
+    }
+    data = instantly_get("/campaign/list", params)
+    return data
+
+
+def instantly_get_campaign_analytics(arguments):
+    """Get analytics summary for campaigns."""
+    params = {}
+    if arguments.get("campaign_id"):
+        params["campaign_id"] = arguments["campaign_id"]
+    if arguments.get("start_date"):
+        params["start_date"] = arguments["start_date"]
+    if arguments.get("end_date"):
+        params["end_date"] = arguments["end_date"]
+    return instantly_get("/analytics/campaign/summary", params)
+
+
+def instantly_get_leads(arguments):
+    """Get leads from a campaign."""
+    campaign_id = arguments.get("campaign_id")
+    if not campaign_id:
+        raise ValueError("campaign_id is required.")
+    params = {
+        "campaign_id": campaign_id,
+        "skip": arguments.get("skip", 0),
+        "limit": arguments.get("limit", 100),
+    }
+    return instantly_get("/lead/get", params)
+
+
+def instantly_add_leads(arguments):
+    """Add leads to a campaign."""
+    campaign_id = arguments.get("campaign_id")
+    leads = arguments.get("leads")
+    if not campaign_id or not leads:
+        raise ValueError("campaign_id and leads are required.")
+    payload = {
+        "campaign_id": campaign_id,
+        "leads": leads,
+        "skip_if_in_workspace": arguments.get("skip_if_in_workspace", False),
+    }
+    return instantly_post("/lead/add", payload)
+
+
+def instantly_get_account_vitals():
+    """Get account-level information."""
+    return instantly_get("/account/list")
