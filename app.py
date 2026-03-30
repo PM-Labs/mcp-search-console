@@ -115,7 +115,7 @@ def oauth_token():
             return jsonify({"error": "invalid_grant"}), 400
 
         del auth_codes[code]
-        return jsonify({"access_token": AUTH_TOKEN, "token_type": "Bearer", "expires_in": 86400})
+        return jsonify({"access_token": AUTH_TOKEN, "token_type": "Bearer", "expires_in": 2592000})
 
     # client_credentials grant
     if not OAUTH_CLIENT_SECRET:
@@ -136,7 +136,7 @@ def oauth_token():
     if client_id != OAUTH_CLIENT_ID or client_secret != OAUTH_CLIENT_SECRET:
         return jsonify({"error": "invalid_client"}), 401
 
-    return jsonify({"access_token": AUTH_TOKEN, "token_type": "Bearer", "expires_in": 86400})
+    return jsonify({"access_token": AUTH_TOKEN, "token_type": "Bearer", "expires_in": 2592000})
 
 
 # =============================================================================
